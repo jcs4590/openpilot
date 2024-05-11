@@ -115,17 +115,6 @@ class Controls:
     self.AM = AlertManager()
     self.events = Events()
 
-    self.LoC = LongControl(self.CP)
-    self.VM = VehicleModel(self.CP)
-
-    self.LaC: LatControl
-    if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
-      self.LaC = LatControlAngle(self.CP, self.CI)
-    elif self.CP.lateralTuning.which() == 'pid':
-      self.LaC = LatControlPID(self.CP, self.CI)
-    elif self.CP.lateralTuning.which() == 'torque':
-      self.LaC = LatControlTorque(self.CP, self.CI)
-
     self.initialized = False
     self.state = State.disabled
     self.enabled = False
@@ -531,24 +520,7 @@ class Controls:
   def state_control(self, CS):
     """Given the state, this function returns a CarControl packet"""
 
-    # Update VehicleModel
-    lp = self.sm['liveParameters']
-    x = max(lp.stiffnessFactor, 0.1)
-    sr = max(lp.steerRatio, 0.1)
-    self.VM.update_params(x, sr)
-
-    # Update Torque Params
-    if self.CP.lateralTuning.which() == 'torque':
-      torque_params = self.sm['liveTorqueParameters']
-      if self.sm.all_checks(['liveTorqueParameters']) and torque_params.useParams:
-        self.LaC.update_live_torque_params(torque_params.latAccelFactorFiltered, torque_params.latAccelOffsetFiltered,
-                                           torque_params.frictionCoefficientFiltered)
-
-    long_plan = self.sm['longitudinalPlan']
-    model_v2 = self.sm['modelV2']
-
-    CC = car.CarControl.new_message()
-    CC.enabled = self.enabled
+    CC = self.card.state_control(CS)
 
     # Check which actuators can be enabled
     standstill = CS.vEgo <= max(self.CP.minSteerSpeed, MIN_LATERAL_CONTROL_SPEED) or CS.standstill
@@ -556,23 +528,23 @@ class Controls:
                    (not standstill or self.joystick_mode)
     CC.longActive = self.enabled and not self.events.contains(ET.OVERRIDE_LONGITUDINAL) and self.CP.openpilotLongitudinalControl
 
-    actuators = CC.actuators
-    actuators.longControlState = self.LoC.long_control_state
+    # actuators = CC.actuators
+    # actuators.longControlState = self.LoC.long_control_state
 
-    # Enable blinkers while lane changing
-    if model_v2.meta.laneChangeState != LaneChangeState.off:
-      CC.leftBlinker = model_v2.meta.laneChangeDirection == LaneChangeDirection.left
-      CC.rightBlinker = model_v2.meta.laneChangeDirection == LaneChangeDirection.right
+    # # Enable blinkers while lane changing
+    # if model_v2.meta.laneChangeState != LaneChangeState.off:
+    #   CC.leftBlinker = model_v2.meta.laneChangeDirection == LaneChangeDirection.left
+    #   CC.rightBlinker = model_v2.meta.laneChangeDirection == LaneChangeDirection.right
 
     if CS.leftBlinker or CS.rightBlinker:
       self.last_blinker_frame = self.sm.frame
 
     # State specific actions
 
-    if not CC.latActive:
-      self.LaC.reset()
-    if not CC.longActive:
-      self.LoC.reset(v_pid=CS.vEgo)
+    # if not CC.latActive:
+    #   self.LaC.reset()
+    # if not CC.longActive:
+    #   self.LoC.reset(v_pid=CS.vEgo)
 
     if not self.joystick_mode:
       # accel PID loop
